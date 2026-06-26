@@ -1,6 +1,6 @@
-# Arriegua — Otimização de Rotas de Entrega (PAA)
+# Problema do Caixeiro Viajante usando GRASP (PAA)
 
-Trabalho acadêmico de **Projeto e Análise de Algoritmos (PAA)** que resolve o **Problema do Caixeiro Viajante (PCV)** aplicado a entregas do **Arriegua** em **Russas-CE**.
+Trabalho acadêmico de **Projeto e Análise de Algoritmos (PAA)** que resolve o **Problema do Caixeiro Viajante (PCV/TSP)** com a meta-heurística **GRASP** e busca local **2-opt**, usando um caso de estudo de rotas de entrega em **Russas-CE**.
 
 O sistema calcula a ordem de visita que minimiza a distância total percorrida, usando distâncias reais de estrada (via [OpenRouteService](https://openrouteservice.org/)) e a meta-heurística **GRASP** com busca local **2-opt**.
 
@@ -92,8 +92,8 @@ O processo (construção + 2-opt) repete por `GRASP_MAX_ITERATIONS` vezes. A mel
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/GabrielSTCC/arriegua-otimizacao-rotas-paa.git
-cd arriegua-otimizacao-rotas-paa
+git clone https://github.com/GabrielSTCC/problema-caixeiro-viajante-grasp.git
+cd problema-caixeiro-viajante-grasp
 ```
 
 ### 2. Instale as dependências

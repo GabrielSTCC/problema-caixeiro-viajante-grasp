@@ -1,7 +1,7 @@
 """
-Arriegua — Otimizacao de rotas de entrega em Russas-CE.
+Problema do Caixeiro Viajante (PCV) resolvido com GRASP e busca local 2-opt.
 
-Usa distancias reais (OpenRouteService) e GRASP completo com busca local 2-opt.
+Caso de estudo: rotas de entrega em Russas-CE com distancias reais (OpenRouteService).
 
 Execute:
   py principal.py

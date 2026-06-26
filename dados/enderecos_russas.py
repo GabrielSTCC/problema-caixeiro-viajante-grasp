@@ -1,4 +1,4 @@
-"""Enderecos de entrega do Arriegua em Russas-CE."""
+"""Caso de estudo: enderecos de entrega em Russas-CE."""
 
 from typing import TypedDict
 
