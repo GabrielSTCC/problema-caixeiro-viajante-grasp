@@ -6,9 +6,12 @@ import urllib.error
 import urllib.request
 from typing import TypedDict
 
-from grasp.distancia_haversine import GeoPoint
-
 CostMatrix = list[list[float]]
+
+
+class GeoPoint(TypedDict):
+  latitude: float
+  longitude: float
 
 ORS_MATRIX_BASE_URL = "https://api.openrouteservice.org/v2/matrix"
 

@@ -1,5 +1,6 @@
 """Meta-heuristica GRASP completa: construcao + busca local 2-opt."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .busca_local_2opt import busca_local_2opt
@@ -24,6 +25,8 @@ def resolver_grasp(
   max_iteracoes: int = 100,
   retornar_ao_deposito: bool = True,
   verbose: bool = False,
+  on_melhoria: Callable[[int, float, Tour], None] | None = None,
+  on_iteracao: Callable[[int, int], None] | None = None,
 ) -> ResultadoGrasp:
   """
   Executa GRASP completo com multiplas iteracoes e busca local 2-opt.
@@ -53,11 +56,16 @@ def resolver_grasp(
     if custo < melhor_custo:
       melhor_custo = custo
       melhor_tour = tour
+      if on_melhoria is not None:
+        on_melhoria(iteracao, custo, tour)
       if verbose:
         print(
           f"Iteracao {iteracao}: novo melhor custo = {custo:.3f} km, "
           f"tour = {tour}"
         )
+
+    if on_iteracao is not None:
+      on_iteracao(iteracao, max_iteracoes)
 
   if melhor_tour is None:
     return ResultadoGrasp(tour=[], custo_km=0.0, iteracoes=max_iteracoes)

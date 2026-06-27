@@ -16,8 +16,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from dados.enderecos_russas import ENDERECOS_RUSSAS, EnderecoRussas, obter_pontos_geograficos
-from grasp import construir_matriz_custos_rota, resolver_grasp
+from dados.enderecos_russas import ENDERECOS_RUSSAS, EnderecoRussas
+from servicos.executar_otimizacao import executar_otimizacao, formatar_ordem_visita
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -39,32 +39,43 @@ def imprimir_matriz_custos(rotulo: str, matriz: list[list[float]]) -> None:
     print("  [" + ", ".join(f"{v:.3f}" for v in linha) + "]")
 
 
-def formatar_ordem_visita(
-  tour: list[int],
-  enderecos: list[EnderecoRussas],
-) -> str:
-  if len(tour) <= 1:
-    return enderecos[0]["endereco"]
-
-  paradas = " -> ".join(enderecos[indice]["endereco"] for indice in tour[1:])
-  return f"{enderecos[0]['endereco']} -> {paradas} -> {enderecos[0]['endereco']}"
-
-
 def principal() -> None:
   imprimir_enderecos(ENDERECOS_RUSSAS)
 
-  pontos = obter_pontos_geograficos(ENDERECOS_RUSSAS)
-  matriz_rotas = construir_matriz_custos_rota(pontos)
-  imprimir_matriz_custos("Matriz ORS (rotas reais, km)", matriz_rotas)
-  print()
+  if os.getenv("ORS_API_KEY", "").strip():
+    print("Calculando matriz ORS (rotas reais)...")
+  else:
+    print("ORS_API_KEY ausente — usando Haversine (aproximado)...")
 
-  resultado = resolver_grasp(
-    matriz_rotas,
+  resultado_otimizacao = executar_otimizacao(
+    ENDERECOS_RUSSAS,
     alpha=ALPHA,
     max_iteracoes=MAX_ITERACOES,
+    usar_ors=bool(os.getenv("ORS_API_KEY", "").strip()),
     retornar_ao_deposito=True,
-    verbose=True,
   )
+
+  if resultado_otimizacao.aviso_matriz:
+    print(f"Aviso: {resultado_otimizacao.aviso_matriz}")
+
+  rotulo_matriz = (
+    "Matriz ORS (rotas reais, km)"
+    if resultado_otimizacao.tipo_matriz == "ors"
+    else "Matriz Haversine (aproximada, km)"
+  )
+  imprimir_matriz_custos(rotulo_matriz, resultado_otimizacao.matriz_custos)
+  print()
+
+  if resultado_otimizacao.melhorias:
+    print(f"\nGRASP - {MAX_ITERACOES} iteracoes (alpha={ALPHA})")
+    print("-" * 60)
+    for melhoria in resultado_otimizacao.melhorias:
+      print(
+        f"Iteracao {melhoria.iteracao}: novo melhor custo = "
+        f"{melhoria.custo_km:.3f} km, tour = {melhoria.tour}"
+      )
+
+  resultado = resultado_otimizacao
 
   print("\n" + "=" * 60)
   print(f"Melhor tour (indices): {resultado.tour}")

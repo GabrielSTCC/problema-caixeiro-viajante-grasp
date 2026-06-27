@@ -55,11 +55,46 @@ O processo (construção + 2-opt) repete por `GRASP_MAX_ITERATIONS` vezes. A mel
 
 ---
 
+## Interface web (Streamlit)
+
+Além do CLI, o projeto oferece uma interface visual em [`app.py`](app.py) para configurar, executar e analisar a otimização.
+
+### Fluxo na interface
+
+1. **Endereços** — visualize e edite depósito + entregas (nome, endereço, latitude, longitude). É possível restaurar o caso padrão de Russas-CE ou adicionar novos pontos.
+2. **Calcular rota** (barra lateral) — informe **α**, **iterações GRASP** e se deseja distâncias reais (ORS) ou Haversine.
+3. O serviço [`servicos/executar_otimizacao.py`](servicos/executar_otimizacao.py) monta a matriz de custos, executa o GRASP e guarda o resultado na sessão.
+4. As abas **Matriz**, **Resultado** e **Mapa** exibem os dados calculados.
+
+### Mapa da rota
+
+A aba **Mapa** usa [Folium](https://python-visualization.github.io/folium/) para mostrar:
+
+- Marcador verde no **depósito** (início e fim da rota)
+- Marcadores numerados nas **entregas**, na ordem do tour encontrado pelo GRASP
+- Traçado da rota sobre o mapa
+
+**Distância vs. visualização:** o algoritmo usa a **Matrix API** da OpenRouteService (distâncias reais entre pares de pontos). O desenho no mapa usa a **Directions API** (geometria pelas ruas), quando a chave ORS está configurada e o toggle de distâncias reais está ativo.
+
+| Modo | Matriz de custos | Linha no mapa |
+|------|------------------|---------------|
+| ORS (padrão com API key) | Distâncias de condução (km) | Rota sólida seguindo as ruas |
+| Haversine (sem key ou fallback) | Distância em linha reta (km) | Linha tracejada entre os pontos |
+
+Se a Directions API falhar, a interface exibe linhas retas como fallback, sem interromper a execução.
+
+---
+
 ## Estrutura do projeto
 
 ```
 .
-├── principal.py                          # Ponto de entrada — executa o fluxo completo
+├── app.py                                # Interface web Streamlit
+├── principal.py                          # Ponto de entrada CLI — executa o fluxo completo
+├── servicos/
+│   └── executar_otimizacao.py            # Orquestracao matriz + GRASP
+├── ui/
+│   └── componentes/                      # Editor de enderecos e mapa Folium
 ├── dados/
 │   └── enderecos_russas.py               # Endereços e coordenadas em Russas-CE
 ├── grasp/
@@ -69,10 +104,12 @@ O processo (construção + 2-opt) repete por `GRASP_MAX_ITERATIONS` vezes. A mel
 │   ├── custo_tour.py                     # Cálculo do custo total de uma rota
 │   ├── construir_matriz_custos_rota.py   # Matriz via OpenRouteService
 │   ├── construir_matriz_custos_haversine.py
+│   ├── construir_geometria_rota.py       # Geometria da rota para o mapa
 │   └── distancia_haversine.py            # Distância geodésica (fallback)
 ├── infraestrutura/
 │   └── roteamento/
-│       └── cliente_open_route_service.py # Cliente HTTP da ORS Matrix API
+│       ├── cliente_open_route_service.py # Cliente ORS Matrix API
+│       └── cliente_ors_directions.py     # Cliente ORS Directions API (mapa)
 ├── requirements.txt
 ├── .env.example                          # Modelo de variáveis de ambiente
 └── .gitignore                            # .env está ignorado — nunca commite chaves!
@@ -122,11 +159,28 @@ GRASP_MAX_ITERATIONS=100
 
 ### 4. Execute
 
+**Linha de comando:**
+
 ```bash
 py principal.py
 ```
 
 A saída inclui a matriz de distâncias, o progresso do GRASP e a melhor rota encontrada com a ordem de visita.
+
+**Interface web (Streamlit):**
+
+```bash
+py -m streamlit run app.py
+```
+
+A interface abre no navegador com quatro abas:
+
+- **Endereços** — edite a lista de pontos (depósito + entregas) ou restaure o padrão Russas-CE
+- **Matriz de distâncias** — tabela interativa com distâncias em km entre todos os pares
+- **Resultado GRASP** — custo total, ordem de visita e histórico de melhorias por iteração
+- **Mapa** — rota visual com marcadores numerados; segue as ruas quando ORS está ativo
+
+Na barra lateral, ajuste **α**, **iterações GRASP** e escolha entre distâncias reais (ORS) ou Haversine (fallback). Um indicador mostra se a API key está configurada.
 
 ---
 
@@ -134,7 +188,7 @@ A saída inclui a matriz de distâncias, o progresso do GRASP e a melhor rota en
 
 | Variável | Descrição | Padrão |
 |----------|-----------|--------|
-| `ORS_API_KEY` | Chave da OpenRouteService | *(obrigatória)* |
+| `ORS_API_KEY` | Chave da OpenRouteService | *(obrigatória para ORS; Haversine funciona sem)* |
 | `GRASP_ALPHA` | Parâmetro α da RCL (0 a 1) | `0.3` |
 | `GRASP_MAX_ITERATIONS` | Número de iterações GRASP | `100` |
 
