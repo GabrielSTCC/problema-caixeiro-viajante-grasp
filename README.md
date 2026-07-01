@@ -61,10 +61,21 @@ Além do CLI, o projeto oferece uma interface visual em [`app.py`](app.py) para 
 
 ### Fluxo na interface
 
-1. **Endereços** — visualize e edite depósito + entregas (nome, endereço, latitude, longitude). É possível restaurar o caso padrão de Russas-CE ou adicionar novos pontos.
-2. **Calcular rota** (barra lateral) — informe **α**, **iterações GRASP** e se deseja distâncias reais (ORS) ou Haversine.
-3. O serviço [`servicos/executar_otimizacao.py`](servicos/executar_otimizacao.py) monta a matriz de custos, executa o GRASP e guarda o resultado na sessão.
-4. As abas **Matriz**, **Resultado** e **Mapa** exibem os dados calculados.
+1. **Endereços** — edite depósito + entregas persistidos em **SQLite** (`dados/enderecos.db`). Ao alterar o campo endereço, latitude/longitude são buscadas automaticamente (ORS, com fallback Nominatim). Endereços excluídos na tabela somem da lista e não entram no cálculo.
+2. **Calcular rota** (barra lateral) — geocodifica pendências, depois executa GRASP com **α**, iterações e modo ORS/Haversine.
+3. O serviço [`servicos/executar_otimizacao.py`](servicos/executar_otimizacao.py) monta a matriz de custos e guarda o resultado na sessão.
+4. As abas **Matriz**, **Resultado** e **Mapa** só exibem dados se os endereços não mudaram desde o último cálculo.
+
+### Persistência de endereços (SQLite)
+
+| Ação | Comportamento |
+|------|----------------|
+| Adicionar entrega | Salva no banco; geocodifica ao preencher o endereço |
+| Editar endereço | Geocodifica automaticamente as linhas alteradas |
+| Excluir linha | Marca como inativo no banco; some da UI e invalida resultado |
+| Restaurar padrão | Repovoa com os 7 endereços de Russas-CE |
+
+O arquivo `dados/enderecos.db` é criado automaticamente na primeira execução e não é versionado no Git.
 
 ### Mapa da rota
 
@@ -81,7 +92,7 @@ A aba **Mapa** usa [Folium](https://python-visualization.github.io/folium/) para
 | ORS (padrão com API key) | Distâncias de condução (km) | Rota sólida seguindo as ruas |
 | Haversine (sem key ou fallback) | Distância em linha reta (km) | Linha tracejada entre os pontos |
 
-Se a Directions API falhar, a interface exibe linhas retas como fallback, sem interromper a execução.
+Se a Directions API falhar em algum trecho, a interface usa linha reta naquele trecho e ajusta o zoom automaticamente (`fit_bounds`).
 
 ---
 
@@ -96,7 +107,8 @@ Se a Directions API falhar, a interface exibe linhas retas como fallback, sem in
 ├── ui/
 │   └── componentes/                      # Editor de enderecos e mapa Folium
 ├── dados/
-│   └── enderecos_russas.py               # Endereços e coordenadas em Russas-CE
+│   ├── enderecos_russas.py               # Seed padrao Russas-CE
+│   └── repositorio_enderecos.py          # Persistencia SQLite
 ├── grasp/
 │   ├── resolver_grasp.py                 # Loop GRASP (construção + 2-opt + melhor global)
 │   ├── fase_construtiva_grasp.py         # Fase construtiva com RCL
@@ -109,7 +121,8 @@ Se a Directions API falhar, a interface exibe linhas retas como fallback, sem in
 ├── infraestrutura/
 │   └── roteamento/
 │       ├── cliente_open_route_service.py # Cliente ORS Matrix API
-│       └── cliente_ors_directions.py     # Cliente ORS Directions API (mapa)
+│       ├── cliente_ors_directions.py     # Cliente ORS Directions API (mapa)
+│       └── cliente_nominatim.py          # Geocodificacao de enderecos (OSM)
 ├── requirements.txt
 ├── .env.example                          # Modelo de variáveis de ambiente
 └── .gitignore                            # .env está ignorado — nunca commite chaves!
@@ -175,7 +188,7 @@ py -m streamlit run app.py
 
 A interface abre no navegador com quatro abas:
 
-- **Endereços** — edite a lista de pontos (depósito + entregas) ou restaure o padrão Russas-CE
+- **Endereços** — edite pontos persistidos em SQLite; geocodificação automática ao alterar o endereço
 - **Matriz de distâncias** — tabela interativa com distâncias em km entre todos os pares
 - **Resultado GRASP** — custo total, ordem de visita e histórico de melhorias por iteração
 - **Mapa** — rota visual com marcadores numerados; segue as ruas quando ORS está ativo

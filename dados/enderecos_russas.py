@@ -1,5 +1,7 @@
 """Caso de estudo: enderecos de entrega em Russas-CE."""
 
+import re
+import unicodedata
 from typing import TypedDict
 
 
@@ -64,6 +66,28 @@ ENDERECOS_RUSSAS: list[EnderecoRussas] = [
     "longitude": -37.969205,
   },
 ]
+
+
+def normalizar_endereco(endereco: str) -> str:
+  """Normaliza endereco para comparacao (sem acento, abreviacoes padronizadas)."""
+  texto = endereco.strip().lower()
+  texto = re.sub(r"\bR\.\s*", "rua ", texto, flags=re.IGNORECASE)
+  texto = re.sub(r"\bAv\.\s*", "avenida ", texto, flags=re.IGNORECASE)
+  texto = re.sub(r"\bTv\.\s*", "travessa ", texto, flags=re.IGNORECASE)
+  sem_acento = unicodedata.normalize("NFKD", texto)
+  sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
+  return re.sub(r"\s+", " ", sem_acento).strip(" ,-")
+
+
+INDICE_COORDENADAS_CONHECIDAS: dict[str, tuple[float, float]] = {
+  normalizar_endereco(item["endereco"]): (item["latitude"], item["longitude"])
+  for item in ENDERECOS_RUSSAS
+}
+
+
+def buscar_coordenadas_conhecidas(endereco: str) -> tuple[float, float] | None:
+  """Retorna coordenadas do cadastro padrao se o endereco coincidir."""
+  return INDICE_COORDENADAS_CONHECIDAS.get(normalizar_endereco(endereco))
 
 
 def obter_pontos_geograficos(

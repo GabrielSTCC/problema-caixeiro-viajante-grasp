@@ -9,13 +9,17 @@ from dotenv import load_dotenv
 from streamlit_folium import st_folium
 
 from dados.enderecos_russas import EnderecoRussas
+from dados.repositorio_enderecos import listar_ativos, para_endereco_grasp, sincronizar_lista
 from grasp.construir_geometria_rota import obter_coordenadas_rota
+from servicos.estado_enderecos import fingerprint_enderecos
 from servicos.executar_otimizacao import (
   ResultadoOtimizacao,
   executar_otimizacao,
   formatar_ordem_visita,
   validar_enderecos,
 )
+from servicos.contexto_geocodificacao import obter_contexto_geocodificacao
+from servicos.geocodificar_enderecos import geocodificar_pendentes
 from ui.componentes.editor_enderecos import renderizar_editor_enderecos
 from ui.componentes.mapa_rota import criar_mapa_rota
 
@@ -35,12 +39,6 @@ CSS = """
     font-size: 1rem;
     margin-bottom: 1.5rem;
   }
-  .metric-card {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1rem 1.25rem;
-  }
   div[data-testid="stSidebar"] {
     background-color: #f8fafc;
   }
@@ -53,6 +51,41 @@ def _inicializar_estado() -> None:
     st.session_state.resultado = None
   if "enderecos_execucao" not in st.session_state:
     st.session_state.enderecos_execucao = None
+  if "resultado_fingerprint" not in st.session_state:
+    st.session_state.resultado_fingerprint = None
+
+
+def _resultado_valido(enderecos: list[EnderecoRussas]) -> bool:
+  resultado = st.session_state.get("resultado")
+  if resultado is None or st.session_state.get("enderecos_execucao") is None:
+    return False
+  if fingerprint_enderecos(enderecos) != st.session_state.get("resultado_fingerprint"):
+    return False
+  if any(indice >= len(enderecos) for indice in resultado.tour):
+    return False
+  return True
+
+
+def _geocodificar_antes_do_calculo(enderecos: list[EnderecoRussas]) -> list[EnderecoRussas]:
+  contexto = obter_contexto_geocodificacao()
+  atualizados, relatorio = geocodificar_pendentes(enderecos, contexto=contexto)
+  if not relatorio:
+    return enderecos
+
+  persistidos = listar_ativos()
+  mesclados = []
+  for indice, item in enumerate(persistidos):
+    mesclado = dict(item)
+    mesclado.update(atualizados[indice])
+    mesclado["id"] = item["id"]
+    mesclados.append(mesclado)
+
+  sincronizar_lista(mesclados)
+  for item in relatorio:
+    if not item.sucesso:
+      st.warning(f"Geocodificacao ({item.nome}): {item.mensagem}")
+
+  return [para_endereco_grasp(item) for item in listar_ativos()]
 
 
 def _renderizar_css() -> None:
@@ -97,6 +130,14 @@ def _renderizar_sidebar() -> tuple[float, int, bool, bool]:
   else:
     st.sidebar.warning("ORS API key ausente — use Haversine ou configure .env")
 
+  google_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
+  if google_key:
+    st.sidebar.success("Google Geocoding key configurada (fallback)")
+  else:
+    st.sidebar.caption(
+      "Google Geocoding ausente — enderecos com numero podem ficar imprecisos no OSM"
+    )
+
   usar_ors = st.sidebar.toggle(
     "Usar distancias reais (ORS)",
     value=bool(api_key),
@@ -119,6 +160,8 @@ def _executar_calculo(
   max_iteracoes: int,
   usar_ors: bool,
 ) -> None:
+  enderecos = _geocodificar_antes_do_calculo(enderecos)
+
   erros = validar_enderecos(enderecos)
   if erros:
     for erro in erros:
@@ -143,6 +186,7 @@ def _executar_calculo(
     progresso.progress(1.0, text="Concluido!")
     st.session_state.resultado = resultado
     st.session_state.enderecos_execucao = list(enderecos)
+    st.session_state.resultado_fingerprint = fingerprint_enderecos(enderecos)
 
     if resultado.aviso_matriz:
       st.warning(resultado.aviso_matriz)
@@ -220,10 +264,14 @@ def _renderizar_aba_mapa(
 ) -> None:
   st.subheader("Mapa da rota")
 
+  if any(indice >= len(enderecos) for indice in resultado.tour):
+    st.warning("Resultado desatualizado. Recalcule a rota.")
+    return
+
   usar_vias = resultado.tipo_matriz == "ors" and bool(os.getenv("ORS_API_KEY", "").strip())
 
   with st.spinner("Carregando rota pelas ruas..."):
-    coordenadas, segue_vias = obter_coordenadas_rota(
+    coordenadas, segue_vias, avisos = obter_coordenadas_rota(
       enderecos,
       resultado.tour,
       usar_vias=usar_vias,
@@ -233,9 +281,11 @@ def _renderizar_aba_mapa(
     st.caption("Rota desenhada pelas ruas via OpenRouteService Directions.")
   elif usar_vias:
     st.warning(
-      "Nao foi possivel obter a geometria pelas ruas. "
-      "Exibindo linhas retas entre os pontos."
+      "Nao foi possivel obter toda a geometria pelas ruas. "
+      "Exibindo linhas retas nos trechos com falha."
     )
+    for aviso in avisos:
+      st.caption(aviso)
   else:
     st.caption(
       "Modo Haversine: linhas retas entre os pontos "
@@ -279,22 +329,29 @@ def main() -> None:
 
   resultado: ResultadoOtimizacao | None = st.session_state.resultado
   enderecos_resultado: list[EnderecoRussas] | None = st.session_state.enderecos_execucao
+  resultado_ok = _resultado_valido(enderecos)
 
   with aba_matriz:
-    if resultado and enderecos_resultado:
+    if resultado_ok and resultado and enderecos_resultado:
       _renderizar_aba_matriz(resultado, enderecos_resultado)
+    elif resultado and not resultado_ok:
+      st.warning("Enderecos alterados. Recalcule a rota para atualizar a matriz.")
     else:
       st.info("Calcule uma rota na barra lateral para ver a matriz de distancias.")
 
   with aba_resultado:
-    if resultado and enderecos_resultado:
+    if resultado_ok and resultado and enderecos_resultado:
       _renderizar_aba_resultado(resultado, enderecos_resultado)
+    elif resultado and not resultado_ok:
+      st.warning("Enderecos alterados. Recalcule a rota para atualizar o resultado.")
     else:
       st.info("Calcule uma rota na barra lateral para ver o resultado do GRASP.")
 
   with aba_mapa:
-    if resultado and enderecos_resultado:
+    if resultado_ok and resultado and enderecos_resultado:
       _renderizar_aba_mapa(resultado, enderecos_resultado)
+    elif resultado and not resultado_ok:
+      st.warning("Enderecos alterados. Recalcule a rota para atualizar o mapa.")
     else:
       st.info("Calcule uma rota na barra lateral para visualizar o mapa.")
 

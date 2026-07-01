@@ -7,6 +7,18 @@ from dados.enderecos_russas import EnderecoRussas
 from grasp.tipos import Tour
 
 
+def _aplicar_zoom(mapa: folium.Map, coordenadas: list[list[float]]) -> None:
+  if not coordenadas:
+    return
+
+  lats = [p[0] for p in coordenadas]
+  lngs = [p[1] for p in coordenadas]
+  mapa.fit_bounds(
+    [[min(lats), min(lngs)], [max(lats), max(lngs)]],
+    padding=(30, 30),
+  )
+
+
 def criar_mapa_rota(
   enderecos: list[EnderecoRussas],
   tour: Tour,
@@ -59,6 +71,8 @@ def criar_mapa_rota(
       ),
     ).add_to(mapa)
 
+  pontos_bounds = [[e["latitude"], e["longitude"]] for e in enderecos]
+
   if tour and coordenadas_rota:
     PolyLine(
       coordenadas_rota,
@@ -67,5 +81,7 @@ def criar_mapa_rota(
       opacity=0.85,
       dash_array=None if segue_vias else "8",
     ).add_to(mapa)
+    pontos_bounds.extend(coordenadas_rota)
 
+  _aplicar_zoom(mapa, pontos_bounds)
   return mapa

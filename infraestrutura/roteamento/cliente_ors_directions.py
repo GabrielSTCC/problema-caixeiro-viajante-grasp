@@ -19,34 +19,33 @@ class OpcoesDirections(TypedDict, total=False):
   profile: str
 
 
-def obter_geometria_rota_vias(
-  pontos_ordenados: list[PontoGeografico],
-  opcoes: OpcoesDirections | None = None,
-) -> list[list[float]]:
-  """
-  Obtem coordenadas da rota pelas ruas via ORS Directions API.
+class ResultadoGeometriaRota(TypedDict):
+  coordenadas: list[list[float]]
+  segue_vias: bool
+  avisos: list[str]
 
-  Retorna lista de [latitude, longitude] pronta para Folium.
-  """
+
+def _obter_credenciais(opcoes: OpcoesDirections | None) -> tuple[str, str]:
   opcoes = opcoes or {}
-
-  if len(pontos_ordenados) < 2:
-    return [
-      [ponto["latitude"], ponto["longitude"]]
-      for ponto in pontos_ordenados
-    ]
-
-  api_key = opcoes.get("api_key") or os.getenv("ORS_API_KEY")
+  api_key = opcoes.get("api_key") or os.getenv("ORS_API_KEY", "")
   profile = opcoes.get("profile") or os.getenv("ORS_PROFILE") or "driving-car"
-
   if not api_key:
     raise ValueError(
       "ORS_API_KEY nao configurada. Necessaria para geometria de rota pelas ruas."
     )
+  return api_key, profile
 
+
+def _requisitar_geometria_trecho(
+  origem: PontoGeografico,
+  destino: PontoGeografico,
+  *,
+  api_key: str,
+  profile: str,
+) -> list[list[float]]:
   coordinates = [
-    [ponto["longitude"], ponto["latitude"]]
-    for ponto in pontos_ordenados
+    [origem["longitude"], origem["latitude"]],
+    [destino["longitude"], destino["latitude"]],
   ]
   payload = json.dumps({"coordinates": coordinates}).encode("utf-8")
 
@@ -61,7 +60,7 @@ def obter_geometria_rota_vias(
   )
 
   try:
-    with urllib.request.urlopen(request) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:
       data = json.loads(response.read().decode("utf-8"))
   except urllib.error.HTTPError as error:
     raise _mapear_erro_http(error) from error
@@ -76,6 +75,75 @@ def obter_geometria_rota_vias(
     raise ValueError("Resposta ORS invalida: geometria da rota ausente")
 
   return [[lat, lng] for lng, lat in coordenadas]
+
+
+def obter_geometria_rota_vias(
+  pontos_ordenados: list[PontoGeografico],
+  opcoes: OpcoesDirections | None = None,
+) -> list[list[float]]:
+  """
+  Obtem coordenadas da rota pelas ruas via ORS Directions API (trecho a trecho).
+
+  Retorna lista de [latitude, longitude] pronta para Folium.
+  """
+  resultado = obter_geometria_rota_detalhada(pontos_ordenados, opcoes=opcoes)
+  return resultado["coordenadas"]
+
+
+def obter_geometria_rota_detalhada(
+  pontos_ordenados: list[PontoGeografico],
+  opcoes: OpcoesDirections | None = None,
+) -> ResultadoGeometriaRota:
+  if len(pontos_ordenados) < 2:
+    return {
+      "coordenadas": [
+        [ponto["latitude"], ponto["longitude"]]
+        for ponto in pontos_ordenados
+      ],
+      "segue_vias": False,
+      "avisos": [],
+    }
+
+  api_key, profile = _obter_credenciais(opcoes)
+  coordenadas: list[list[float]] = []
+  avisos: list[str] = []
+  trechos_vias = 0
+
+  for indice in range(len(pontos_ordenados) - 1):
+    origem = pontos_ordenados[indice]
+    destino = pontos_ordenados[indice + 1]
+    try:
+      trecho = _requisitar_geometria_trecho(
+        origem,
+        destino,
+        api_key=api_key,
+        profile=profile,
+      )
+      if coordenadas and trecho:
+        trecho = trecho[1:]
+      coordenadas.extend(trecho)
+      trechos_vias += 1
+    except ValueError as erro:
+      avisos.append(f"Trecho {indice + 1}->{indice + 2}: {erro}")
+      linha = [
+        [origem["latitude"], origem["longitude"]],
+        [destino["latitude"], destino["longitude"]],
+      ]
+      if coordenadas:
+        linha = linha[1:]
+      coordenadas.extend(linha)
+
+  if not coordenadas:
+    coordenadas = [
+      [ponto["latitude"], ponto["longitude"]]
+      for ponto in pontos_ordenados
+    ]
+
+  return {
+    "coordenadas": coordenadas,
+    "segue_vias": trechos_vias > 0 and trechos_vias == len(pontos_ordenados) - 1,
+    "avisos": avisos,
+  }
 
 
 def _mapear_erro_http(error: urllib.error.HTTPError) -> ValueError:
