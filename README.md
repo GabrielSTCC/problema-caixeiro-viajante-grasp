@@ -1,199 +1,287 @@
-# Problema do Caixeiro Viajante usando GRASP (PAA)
+# Problema do Caixeiro Viajante com GRASP
 
-Trabalho acadêmico de **Projeto e Análise de Algoritmos (PAA)** que resolve o **Problema do Caixeiro Viajante (PCV/TSP)** com a meta-heurística **GRASP** e busca local **2-opt**, usando um caso de estudo de rotas de entrega em **Russas-CE**.
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-FF4B4B?style=flat&logo=streamlit&logoColor=white)
+![OpenRouteService](https://img.shields.io/badge/Roteamento-OpenRouteService-4CAF50?style=flat)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
-O sistema calcula a ordem de visita que minimiza a distância total percorrida, usando distâncias reais de estrada (via [OpenRouteService](https://openrouteservice.org/)) e a meta-heurística **GRASP** com busca local **2-opt**.
+Otimização de rotas de entrega com a meta-heurística **GRASP** e busca local **2-opt**, aplicada a um caso real em **Russas-CE**. O projeto inclui **CLI**, **interface web Streamlit** com mapa interativo e integração com APIs de roteamento e geocodificação.
 
----
-
-## Problema
-
-Dado um depósito e vários pontos de entrega, encontrar a rota mais curta que:
-
-1. Parte do depósio (índice 0)
-2. Visita cada entrega exatamente uma vez
-3. Retorna ao depósio ao final
-
-Esse é um caso clássico de **TSP (Traveling Salesman Problem)**, NP-difícil. Por isso usamos **GRASP** — uma meta-heurística que combina construção gulosa aleatorizada com melhoria local.
+**Repositório:** [github.com/GabrielSTCC/problema-caixeiro-viajante-grasp](https://github.com/GabrielSTCC/problema-caixeiro-viajante-grasp)
 
 ---
 
-## Como funciona o algoritmo
+## Índice
 
-### 1. Matriz de custos (distâncias reais)
+- [Sobre o projeto](#sobre-o-projeto)
+- [Destaques](#destaques)
+- [Demonstração](#demonstração)
+- [Stack tecnológica](#stack-tecnológica)
+- [Arquitetura](#arquitetura)
+- [Algoritmo GRASP](#algoritmo-grasp)
+- [Interface web](#interface-web)
+- [Estrutura do repositório](#estrutura-do-repositório)
+- [Como executar](#como-executar)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Testes](#testes)
+- [Contexto acadêmico](#contexto-acadêmico)
+- [Autor](#autor)
+- [Licença](#licença)
 
-As coordenadas dos endereços são enviadas à **OpenRouteService Matrix API**, que retorna distâncias de condução em metros. O projeto converte para quilômetros e monta uma matriz `n × n`.
+---
 
-> Existe também um fallback com distância **Haversine** (linha reta) em `grasp/construir_matriz_custos_haversine.py`, útil para testes sem API.
+## Sobre o projeto
 
-### 2. Fase construtiva GRASP
+Dado um **depósito** e vários **pontos de entrega**, o sistema encontra a ordem de visita que **minimiza a distância total** percorrida — o clássico **TSP (Traveling Salesman Problem)**, problema **NP-difícil**.
 
-A cada iteração, a rota é construída passo a passo a partir do depósito:
+Em vez de busca exaustiva, o projeto usa **GRASP** (*Greedy Randomized Adaptive Search Procedure*): construção gulosa aleatorizada + melhoria local **2-opt**, com matriz de custos baseada em **distâncias reais de estrada** via [OpenRouteService](https://openrouteservice.org/).
 
-- Para cada nó atual, calcula-se o custo até todos os não visitados
-- Monta-se a **Lista de Candidatos Restrita (RCL)** com nós cujo custo ≤ `C_min + α × (C_max - C_min)`
-- Escolhe-se **aleatoriamente** um candidato da RCL
-- Repete até visitar todos os nós
+| Entrada | Processamento | Saída |
+|---------|---------------|-------|
+| Depósito + entregas com coordenadas | Matriz de distâncias + GRASP + 2-opt | Rota otimizada, custo em km, mapa visual |
 
-O parâmetro **α** (alpha) controla o equilíbrio entre gula e diversificação:
+---
+
+## Destaques
+
+- **Meta-heurística GRASP** com RCL parametrizável (`α`) e múltiplas iterações
+- **Busca local 2-opt** para eliminar cruzamentos e refinar cada solução
+- **Distâncias reais** via ORS Matrix API, com fallback **Haversine** para desenvolvimento offline
+- **Interface Streamlit** com editor de endereços, matriz interativa, histórico de melhorias e mapa Folium
+- **Persistência SQLite** de endereços com geocodificação automática (ORS, Google ou Nominatim)
+- **Arquitetura em camadas** — algoritmo, serviços, infraestrutura de APIs e UI separados
+- **CLI e web** compartilham a mesma lógica de otimização em `servicos/executar_otimizacao.py`
+
+---
+
+## Demonstração
+
+### Interface web
+
+Execute `py -m streamlit run app.py` e explore as abas:
+
+| Aba | O que mostra |
+|-----|--------------|
+| **Endereços** | Depósito e entregas editáveis, geocodificação automática |
+| **Matriz** | Distâncias em km entre todos os pares de pontos |
+| **Resultado** | Custo total, ordem de visita e evolução por iteração |
+| **Mapa** | Rota visual com marcadores numerados sobre as ruas |
+
+> **Dica para o README:** adicione capturas de tela em `docs/assets/` (ex.: `docs/assets/demo-mapa.png`) e referencie aqui para enriquecer o portfólio visualmente.
+
+### Linha de comando
+
+```bash
+py principal.py
+```
+
+Exibe endereços, matriz de distâncias, progresso do GRASP e a melhor rota encontrada.
+
+---
+
+## Stack tecnológica
+
+| Camada | Tecnologias |
+|--------|-------------|
+| Linguagem | Python 3.10+ |
+| Algoritmo | GRASP, 2-opt, Haversine |
+| Interface | Streamlit, Folium, streamlit-folium, Pandas |
+| Dados | SQLite, python-dotenv |
+| APIs externas | OpenRouteService (Matrix + Directions + Geocode), Nominatim, Google Geocoding (opcional) |
+
+---
+
+## Arquitetura
+
+```mermaid
+flowchart TB
+  subgraph UI["Interface"]
+    APP["app.py — Streamlit"]
+    CLI["principal.py — CLI"]
+  end
+
+  subgraph Servicos["Serviços"]
+    EXEC["executar_otimizacao.py"]
+    GEO["geocodificar_enderecos.py"]
+    REPO["repositorio_enderecos.py — SQLite"]
+  end
+
+  subgraph Algoritmo["GRASP / TSP"]
+    GRASP["resolver_grasp.py"]
+    CONST["fase_construtiva_grasp.py"]
+    OPT["busca_local_2opt.py"]
+    MAT["construir_matriz_custos_*.py"]
+  end
+
+  subgraph Infra["Infraestrutura"]
+    ORS["OpenRouteService"]
+    NOM["Nominatim"]
+    GGL["Google Geocoding"]
+  end
+
+  APP --> EXEC
+  APP --> GEO
+  APP --> REPO
+  CLI --> EXEC
+  EXEC --> MAT
+  EXEC --> GRASP
+  GRASP --> CONST
+  GRASP --> OPT
+  MAT --> ORS
+  GEO --> ORS
+  GEO --> NOM
+  GEO --> GGL
+```
+
+---
+
+## Algoritmo GRASP
+
+### 1. Matriz de custos
+
+Coordenadas dos endereços são enviadas à **ORS Matrix API**, que retorna distâncias de condução em metros. O projeto converte para quilômetros e monta uma matriz `n × n`.
+
+Existe fallback **Haversine** (linha reta) em `grasp/construir_matriz_custos_haversine.py` para testes sem API.
+
+### 2. Fase construtiva
+
+A cada iteração, a rota é construída a partir do depósito:
+
+1. Para cada nó atual, calcula o custo até todos os não visitados
+2. Monta a **Lista de Candidatos Restrita (RCL)** com nós cujo custo ≤ `C_min + α × (C_max - C_min)`
+3. Escolhe **aleatoriamente** um candidato da RCL
+4. Repete até visitar todos os nós
 
 | α | Comportamento |
 |---|---------------|
-| 0 | Sempre escolhe o mais barato (guloso puro) |
-| 1 | Considera todos os candidatos (máxima aleatoriedade) |
-| 0.3 | Padrão — boa diversificação com viés para custos menores |
+| `0` | Guloso puro — sempre o mais barato |
+| `1` | Máxima aleatoriedade |
+| `0.3` | Padrão — diversificação com viés para custos menores |
 
 ### 3. Busca local 2-opt
 
-Após cada construção, aplica-se **2-opt**: troca pares de arestas da rota enquanto houver melhoria. Isso elimina cruzamentos e reduz o custo localmente.
+Após cada construção, **2-opt** troca pares de arestas enquanto houver melhoria, eliminando cruzamentos.
 
 ### 4. Iterações
 
-O processo (construção + 2-opt) repete por `GRASP_MAX_ITERATIONS` vezes. A melhor rota encontrada é retornada.
+Construção + 2-opt repetem por `GRASP_MAX_ITERATIONS` vezes. A melhor rota global é retornada.
 
-**Complexidade:** O(k × n²), onde `k` = número de iterações e `n` = número de pontos.
+**Complexidade:** `O(k × n²)`, onde `k` = iterações e `n` = pontos.
 
 ---
 
-## Interface web (Streamlit)
+## Interface web
 
-Além do CLI, o projeto oferece uma interface visual em [`app.py`](app.py) para configurar, executar e analisar a otimização.
+Além do CLI, [`app.py`](app.py) oferece uma interface visual para configurar, executar e analisar a otimização.
 
-### Fluxo na interface
+### Fluxo
 
-1. **Endereços** — edite depósito + entregas persistidos em **SQLite** (`dados/enderecos.db`). Ao alterar o campo endereço, latitude/longitude são buscadas automaticamente (ORS, com fallback Nominatim). Endereços excluídos na tabela somem da lista e não entram no cálculo.
-2. **Calcular rota** (barra lateral) — geocodifica pendências, depois executa GRASP com **α**, iterações e modo ORS/Haversine.
-3. O serviço [`servicos/executar_otimizacao.py`](servicos/executar_otimizacao.py) monta a matriz de custos e guarda o resultado na sessão.
-4. As abas **Matriz**, **Resultado** e **Mapa** só exibem dados se os endereços não mudaram desde o último cálculo.
+1. **Endereços** — edite depósito e entregas persistidos em **SQLite** (`dados/enderecos.db`). Ao alterar um endereço, latitude/longitude são buscadas automaticamente.
+2. **Calcular rota** (barra lateral) — geocodifica pendências e executa GRASP com **α**, iterações e modo ORS/Haversine.
+3. **Matriz**, **Resultado** e **Mapa** só exibem dados se os endereços não mudaram desde o último cálculo.
 
-### Persistência de endereços (SQLite)
+### Persistência de endereços
 
 | Ação | Comportamento |
-|------|----------------|
+|------|---------------|
 | Adicionar entrega | Salva no banco; geocodifica ao preencher o endereço |
 | Editar endereço | Geocodifica automaticamente as linhas alteradas |
-| Excluir linha | Marca como inativo no banco; some da UI e invalida resultado |
+| Excluir linha | Marca como inativo; some da UI e invalida resultado |
 | Restaurar padrão | Repovoa com os 7 endereços de Russas-CE |
 
-O arquivo `dados/enderecos.db` é criado automaticamente na primeira execução e não é versionado no Git.
+O arquivo `dados/enderecos.db` é criado na primeira execução e **não é versionado**.
 
 ### Mapa da rota
 
-A aba **Mapa** usa [Folium](https://python-visualization.github.io/folium/) para mostrar:
+A aba **Mapa** usa [Folium](https://python-visualization.github.io/folium/):
 
-- Marcador verde no **depósito** (início e fim da rota)
-- Marcadores numerados nas **entregas**, na ordem do tour encontrado pelo GRASP
+- Marcador verde no **depósito** (início e fim)
+- Marcadores numerados nas **entregas**, na ordem do tour
 - Traçado da rota sobre o mapa
-
-**Distância vs. visualização:** o algoritmo usa a **Matrix API** da OpenRouteService (distâncias reais entre pares de pontos). O desenho no mapa usa a **Directions API** (geometria pelas ruas), quando a chave ORS está configurada e o toggle de distâncias reais está ativo.
 
 | Modo | Matriz de custos | Linha no mapa |
 |------|------------------|---------------|
-| ORS (padrão com API key) | Distâncias de condução (km) | Rota sólida seguindo as ruas |
-| Haversine (sem key ou fallback) | Distância em linha reta (km) | Linha tracejada entre os pontos |
-
-Se a Directions API falhar em algum trecho, a interface usa linha reta naquele trecho e ajusta o zoom automaticamente (`fit_bounds`).
+| ORS (com API key) | Distâncias de condução (km) | Rota sólida pelas ruas |
+| Haversine (fallback) | Distância em linha reta (km) | Linha tracejada entre pontos |
 
 ---
 
-## Estrutura do projeto
+## Estrutura do repositório
 
 ```
 .
 ├── app.py                                # Interface web Streamlit
-├── principal.py                          # Ponto de entrada CLI — executa o fluxo completo
+├── principal.py                          # Ponto de entrada CLI
 ├── servicos/
-│   └── executar_otimizacao.py            # Orquestracao matriz + GRASP
-├── ui/
-│   └── componentes/                      # Editor de enderecos e mapa Folium
+│   ├── executar_otimizacao.py            # Orquestração matriz + GRASP
+│   ├── geocodificar_enderecos.py         # Geocodificação multi-provedor
+│   └── estado_enderecos.py               # Validação de consistência
+├── ui/componentes/                       # Editor de endereços e mapa Folium
 ├── dados/
-│   ├── enderecos_russas.py               # Seed padrao Russas-CE
-│   └── repositorio_enderecos.py          # Persistencia SQLite
+│   ├── enderecos_russas.py               # Seed padrão Russas-CE
+│   └── repositorio_enderecos.py          # Persistência SQLite
 ├── grasp/
-│   ├── resolver_grasp.py                 # Loop GRASP (construção + 2-opt + melhor global)
+│   ├── resolver_grasp.py                 # Loop GRASP completo
 │   ├── fase_construtiva_grasp.py         # Fase construtiva com RCL
 │   ├── busca_local_2opt.py               # Melhoria local 2-opt
-│   ├── custo_tour.py                     # Cálculo do custo total de uma rota
-│   ├── construir_matriz_custos_rota.py   # Matriz via OpenRouteService
-│   ├── construir_matriz_custos_haversine.py
-│   ├── construir_geometria_rota.py       # Geometria da rota para o mapa
-│   └── distancia_haversine.py            # Distância geodésica (fallback)
-├── infraestrutura/
-│   └── roteamento/
-│       ├── cliente_open_route_service.py # Cliente ORS Matrix API
-│       ├── cliente_ors_directions.py     # Cliente ORS Directions API (mapa)
-│       └── cliente_nominatim.py          # Geocodificacao de enderecos (OSM)
+│   └── construir_matriz_custos_*.py      # Matriz ORS e Haversine
+├── infraestrutura/roteamento/            # Clientes ORS, Nominatim, Google
+├── tests/                                # Testes de geocodificação
 ├── requirements.txt
-├── .env.example                          # Modelo de variáveis de ambiente
-└── .gitignore                            # .env está ignorado — nunca commite chaves!
+├── .env.example
+└── .gitignore
 ```
 
 ---
 
-## Pré-requisitos
+## Como executar
+
+### Pré-requisitos
 
 - **Python 3.10+**
-- Conta gratuita na [OpenRouteService](https://openrouteservice.org/dev/#/signup) para obter uma API key
+- Conta gratuita na [OpenRouteService](https://openrouteservice.org/dev/#/signup) (recomendado para distâncias reais)
 
----
-
-## Instalação e execução
-
-### 1. Clone o repositório
+### Instalação
 
 ```bash
 git clone https://github.com/GabrielSTCC/problema-caixeiro-viajante-grasp.git
 cd problema-caixeiro-viajante-grasp
-```
-
-### 2. Instale as dependências
-
-```bash
 py -m pip install -r requirements.txt
 ```
 
-### 3. Configure as variáveis de ambiente
-
-Copie o arquivo de exemplo e preencha **sua** chave da API:
+### Configuração
 
 ```bash
-copy .env.example .env
+copy .env.example .env   # Windows
+# cp .env.example .env   # Linux/macOS
 ```
 
 Edite `.env`:
 
 ```env
 ORS_API_KEY=sua_chave_aqui
+GOOGLE_MAPS_API_KEY=     # opcional — geocodificação mais precisa
 GRASP_ALPHA=0.3
 GRASP_MAX_ITERATIONS=100
 ```
 
-> **Importante:** O arquivo `.env` **não** é versionado. Nunca commite sua chave de API.
+> O arquivo `.env` **não** é versionado. Nunca commite chaves de API.
 
-### 4. Execute
+### Execução
 
-**Linha de comando:**
+**CLI:**
 
 ```bash
 py principal.py
 ```
 
-A saída inclui a matriz de distâncias, o progresso do GRASP e a melhor rota encontrada com a ordem de visita.
-
-**Interface web (Streamlit):**
+**Interface web:**
 
 ```bash
 py -m streamlit run app.py
 ```
 
-A interface abre no navegador com quatro abas:
-
-- **Endereços** — edite pontos persistidos em SQLite; geocodificação automática ao alterar o endereço
-- **Matriz de distâncias** — tabela interativa com distâncias em km entre todos os pares
-- **Resultado GRASP** — custo total, ordem de visita e histórico de melhorias por iteração
-- **Mapa** — rota visual com marcadores numerados; segue as ruas quando ORS está ativo
-
-Na barra lateral, ajuste **α**, **iterações GRASP** e escolha entre distâncias reais (ORS) ou Haversine (fallback). Um indicador mostra se a API key está configurada.
+Na barra lateral, ajuste **α**, **iterações GRASP** e escolha entre distâncias reais (ORS) ou Haversine.
 
 ---
 
@@ -201,29 +289,39 @@ Na barra lateral, ajuste **α**, **iterações GRASP** e escolha entre distânci
 
 | Variável | Descrição | Padrão |
 |----------|-----------|--------|
-| `ORS_API_KEY` | Chave da OpenRouteService | *(obrigatória para ORS; Haversine funciona sem)* |
+| `ORS_API_KEY` | Chave OpenRouteService (Matrix, Directions, Geocode) | — |
+| `GOOGLE_MAPS_API_KEY` | Geocodificação Google (opcional) | — |
 | `GRASP_ALPHA` | Parâmetro α da RCL (0 a 1) | `0.3` |
 | `GRASP_MAX_ITERATIONS` | Número de iterações GRASP | `100` |
 
----
-
-## Endereços de exemplo
-
-Os pontos de entrega estão em `dados/enderecos_russas.py`:
-
-- **Depósito:** R. Maciel Pereira, 1054 — Vila Matoso
-- **7 entregas** espalhadas pelo centro e bairros de Russas-CE
-
-Para usar outros endereços, edite a lista `ENDERECOS_RUSSAS` com nome, endereço e coordenadas (latitude/longitude).
+Sem `ORS_API_KEY`, o sistema usa **Haversine** automaticamente.
 
 ---
 
-## Disciplina
+## Testes
 
-**Projeto e Análise de Algoritmos (PAA)** — trabalho sobre meta-heurísticas aplicadas a problemas de otimização combinatória.
+```bash
+py -m unittest discover -s tests -v
+```
+
+Alguns testes de integração com Google Geocoding exigem `GOOGLE_MAPS_API_KEY` configurada.
+
+---
+
+## Contexto acadêmico
+
+Projeto desenvolvido na disciplina **Projeto e Análise de Algoritmos (PAA)**, explorando meta-heurísticas aplicadas a problemas de otimização combinatória.
+
+**Caso de estudo:** depósito e 7 entregas em Russas-CE (dados em `dados/enderecos_russas.py`).
+
+---
+
+## Autor
+
+**Gabriel** — [GitHub @GabrielSTCC](https://github.com/GabrielSTCC)
 
 ---
 
 ## Licença
 
-Projeto acadêmico — uso livre para fins educacionais.
+Este projeto está sob a licença [MIT](LICENSE). Uso livre para fins educacionais e de portfólio.
